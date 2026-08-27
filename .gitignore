@@ -1,0 +1,70 @@
+# ============================================================
+# NEVER commit real secrets. This file exists to help enforce that.
+# If you're not sure whether a file contains a secret, don't commit it.
+# ============================================================
+
+# Environment / secret files
+.env
+.env.*
+!*.env.example
+*.secrets
+secrets/
+secrets.yml
+secrets.yaml
+
+# SIP / VoIP credentials and provider-specific configs (real, non-example)
+config/issabel/asterisk/sip.conf
+config/issabel/asterisk/pjsip.conf
+config/issabel/asterisk/rtp.conf
+!config/issabel/asterisk/*.example
+
+# Real network configs (only .example files should be committed)
+config/proxmox/interfaces
+!config/proxmox/interfaces.example
+config/issabel/ifcfg-eth0
+!config/issabel/ifcfg-eth0.example
+
+# Keys and certificates
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+*.ppk
+
+# Backups (may contain live credentials/config dumps)
+*.bak
+*.backup
+backups/
+*.tar.gz
+*.tgz
+*.sql
+*.sql.gz
+
+# Database dumps
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs (may contain call detail records, IPs, extension data)
+*.log
+logs/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Terraform / Ansible state if added later
+*.tfstate
+*.tfstate.*
+.terraform/
+*.retry

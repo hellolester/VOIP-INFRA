@@ -1,0 +1,35 @@
+ISSABEL 4 + PROXMOX PUBLIC VOIP - NETWORK TOPOLOGY (plain text)
+================================================================
+
+PRIVATE LAN                              PUBLIC NETWORK
+192.168.10.0/24                          61.245.30.72/29
+      |                                        |
+      |                                        |
+    eno1                                    enp2s0
+      |                                        |
+    vmbr0                                    vmbr1
+192.168.10.181/24                         (no IP address)
+gateway 192.168.10.1                            |
+      |                                        |
+      |-- Proxmox Host (noc01)                 |
+      |                                    net0 (virtio)
+      |-- Zabbix/Grafana LXC              MAC BC:24:11:3F:23:CC
+      |   192.168.10.182                       |
+                                             VM 200
+                                            "Issabel4"
+                                          2 vCPU / 4096MB
+                                            40GB disk
+                                                |
+                                              eth0
+                                                |
+                                        61.245.30.75/29
+                                                |
+                                      gateway 61.245.30.73
+
+RULES:
+- vmbr0 and vmbr1 are never bridged/routed together.
+- vmbr1 never carries an IP address.
+- VM 200 net0 must use bridge=vmbr1, never vmbr0.
+- Issabel's primary IP is 61.245.30.75, never 192.168.10.187.
+
+See ../docs/network-design.md for the authoritative written design.

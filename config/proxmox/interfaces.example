@@ -1,0 +1,40 @@
+# /etc/network/interfaces — Proxmox Host (noc01)
+#
+# This is the INTENDED configuration for this environment.
+# See docs/network-design.md and docs/proxmox-setup.md before applying.
+#
+# Rules:
+#   - vmbr0 carries the Proxmox management IP (private LAN). Never
+#     attach the public NIC here.
+#   - vmbr1 must NEVER have an IP address. It exists only to bridge
+#     enp2s0 through to the Issabel VM (VM 200).
+#
+# Always back up the live file before editing:
+#   cp /etc/network/interfaces /root/interfaces.backup.$(date +%Y%m%d-%H%M%S)
+#
+# Apply changes with: ifreload -a
+
+auto lo
+iface lo inet loopback
+
+# Private/LAN NIC — do not assign an IP here directly, it's used by vmbr0
+iface eno1 inet manual
+
+auto vmbr0
+iface vmbr0 inet static
+        address 192.168.10.181/24
+        gateway 192.168.10.1
+        bridge-ports eno1
+        bridge-stp off
+        bridge-fd 0
+
+# Public/VoIP NIC — do not assign an IP here directly, it's used by vmbr1
+iface enp2s0 inet manual
+
+auto vmbr1
+iface vmbr1 inet manual
+        bridge-ports enp2s0
+        bridge-stp off
+        bridge-fd 0
+
+source /etc/network/interfaces.d/*

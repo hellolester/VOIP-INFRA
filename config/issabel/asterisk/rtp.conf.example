@@ -1,0 +1,21 @@
+; rtp.conf — ILLUSTRATIVE EXAMPLE ONLY
+;
+; This is NOT a confirmed working configuration for this installation.
+; The actual RTP port range configured on this system has not been
+; verified — see docs/rtp-and-firewall.md.
+;
+; Before using this to configure a firewall, confirm the real range
+; with:
+;   asterisk -rx "core show settings"
+; or by reading the live /etc/asterisk/rtp.conf on the server.
+
+[general]
+; A common Asterisk default range — DO NOT ASSUME this matches this
+; installation without verifying first.
+rtpstart=10000
+rtpend=20000
+
+; Uncomment and adjust only after confirming actual NAT/media
+; requirements for this installation:
+; icesupport=no
+; stunaddr=<STUN_SERVER_IF_USED>

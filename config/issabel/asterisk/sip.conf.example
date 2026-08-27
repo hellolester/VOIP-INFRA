@@ -1,0 +1,34 @@
+; sip.conf (chan_sip) — ILLUSTRATIVE EXAMPLE ONLY, NOT A WORKING CONFIG
+;
+; This repository does not assume chan_sip vs PJSIP — confirm which
+; driver is actually configured on this Issabel install before using
+; this file as a reference. See docs/voip-configuration.md.
+;
+; NEVER put real credentials in this file if it is tracked by Git.
+; This .example file must only ever contain placeholders.
+
+[general]
+context=from-trunk
+allowguest=no
+srvlookup=yes
+udpbindaddr=0.0.0.0
+; Verify the actual SIP port in use — 5060/udp is common but not
+; guaranteed. See docs/sip-trunk.md.
+bindport=<SIP_PORT>
+
+; ---------------------------------------------------------------
+; Example trunk definition — placeholders only.
+; Configure the real trunk through the Issabel web GUI instead of
+; editing this file directly where possible.
+; ---------------------------------------------------------------
+[<SIP_PROVIDER>]
+type=peer
+host=<SIP_SERVER>
+fromdomain=<SIP_DOMAIN>
+username=<SIP_USERNAME>
+secret=<SIP_PASSWORD>
+context=from-trunk
+insecure=port,invite
+disallow=all
+allow=ulaw
+allow=alaw

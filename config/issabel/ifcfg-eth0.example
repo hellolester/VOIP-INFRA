@@ -1,0 +1,20 @@
+# /etc/sysconfig/network-scripts/ifcfg-eth0 — Issabel 4 (VM 200)
+#
+# This is the INTENDED configuration for this environment.
+# See docs/issabel-networking.md before applying.
+#
+# Always back up the live file first:
+#   cp /etc/sysconfig/network-scripts/ifcfg-eth0 /root/ifcfg-eth0.backup
+#
+# Apply with: systemctl restart network
+# Verify with: ip -br addr / ip route / ethtool eth0 | grep "Link detected"
+
+DEVICE=eth0
+TYPE=Ethernet
+ONBOOT=yes
+BOOTPROTO=none
+IPADDR=61.245.30.75
+NETMASK=255.255.255.248
+GATEWAY=61.245.30.73
+DNS1=8.8.8.8
+DNS2=1.1.1.1
