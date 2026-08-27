@@ -1,0 +1,1531 @@
+====================================================================
+          PROXMOX + ISABEL 4 PUBLIC VOIP NETWORK RUNBOOK
+====================================================================
+
+PURPOSE
+-------
+
+This runbook documents the complete setup for running Issabel 4
+with a PUBLIC IP through a SECOND physical Ethernet port on the
+Proxmox server.
+
+The Proxmox management/LAN network remains separate from the
+Issabel public VoIP network.
+
+====================================================================
+                        NETWORK TOPOLOGY
+====================================================================
+
+                    INTERNET / ISP
+                         |
+                         |
+                  PUBLIC SWITCH
+                         |
+                         |
+                    enp2s0
+                  Proxmox NIC #2
+                         |
+                         |
+                       vmbr1
+                 Public Linux Bridge
+                         |
+                         |
+                    Issabel VM
+                      VM 200
+                         |
+                        eth0
+                         |
+                  61.245.30.75/29
+                         |
+                  Gateway 61.245.30.73
+
+
+PRIVATE MANAGEMENT NETWORK:
+
+                    PRIVATE SWITCH
+                         |
+                         |
+                       eno1
+                  Proxmox NIC #1
+                         |
+                         |
+                       vmbr0
+                         |
+             +-----------+-----------+
+             |                       |
+             |                       |
+      Proxmox Host              Zabbix/Grafana
+      192.168.10.181            192.168.10.182
+             |
+       Gateway:
+       192.168.10.1
+
+
+====================================================================
+                         IP INFORMATION
+====================================================================
+
+PRIVATE LAN
+-----------
+
+Proxmox:
+192.168.10.181/24
+
+Private gateway:
+192.168.10.1
+
+Zabbix/Grafana LXC:
+192.168.10.182
+
+
+PUBLIC VOIP NETWORK
+-------------------
+
+Network:
+61.245.30.72/29
+
+Subnet mask:
+255.255.255.248
+
+Gateway:
+61.245.30.73
+
+Issabel:
+61.245.30.75
+
+Broadcast:
+61.245.30.79
+
+
+USABLE PUBLIC IPs:
+
+61.245.30.73
+61.245.30.74
+61.245.30.75
+61.245.30.76
+61.245.30.77
+61.245.30.78
+
+
+====================================================================
+                IMPORTANT: WHICH MACHINE RUNS THE COMMAND?
+====================================================================
+
+There are TWO places where commands are entered.
+
+1. PROXMOX HOST
+
+Prompt usually looks similar to:
+
+root@noc01:~#
+
+Commands such as:
+
+ip -br link
+ethtool enp2s0
+qm config 200
+bridge link
+ifreload -a
+
+are run HERE.
+
+
+2. ISABEL 4 CONSOLE
+
+Prompt usually looks similar to:
+
+[root@issabel ~]#
+
+Commands such as:
+
+ip -br addr
+ip route
+ethtool eth0
+systemctl restart network
+
+are run HERE.
+
+
+DO NOT MIX THESE TWO.
+
+
+====================================================================
+                    PART 1 - PHYSICAL NIC
+====================================================================
+
+PURPOSE:
+
+Confirm that the second physical Ethernet port is detected by
+Proxmox and has a physical cable/link.
+
+RUN ON PROXMOX HOST.
+
+
+STEP 1:
+
+ip -br link
+
+
+You should see something similar to:
+
+eno1       UP
+enp2s0     UP
+
+
+The names may have additional interfaces, which is normal.
+
+
+STEP 2:
+
+Check the physical link:
+
+ethtool enp2s0
+
+
+Look for:
+
+Speed: 1000Mb/s
+Duplex: Full
+Link detected: yes
+
+
+The most important line is:
+
+Link detected: yes
+
+
+If you see:
+
+Link detected: no
+
+check:
+
+- Ethernet cable
+- switch port
+- switch configuration
+- correct physical port
+- NIC status
+
+
+STEP 3:
+
+If necessary, bring the interface up:
+
+ip link set enp2s0 up
+
+
+Then:
+
+ethtool enp2s0 | grep -E "Speed|Duplex|Link detected"
+
+
+Expected:
+
+Speed: 1000Mb/s
+Duplex: Full
+Link detected: yes
+
+
+====================================================================
+                 PART 2 - IDENTIFY THE SECOND NIC
+====================================================================
+
+RUN ON PROXMOX HOST.
+
+
+Command:
+
+lspci -nnk | grep -A4 -i ethernet
+
+
+In our system the second NIC was:
+
+Realtek RTL8111/8168/8411
+
+
+Driver:
+
+r8169
+
+
+Check driver:
+
+ethtool -i enp2s0
+
+
+Expected:
+
+driver: r8169
+
+
+If the NIC is not shown by lspci, investigate the hardware/BIOS
+before continuing.
+
+
+====================================================================
+                    PART 3 - PROXMOX vmbr0
+====================================================================
+
+vmbr0 is the PRIVATE/LAN bridge.
+
+It uses:
+
+eno1 -> vmbr0
+
+
+The existing configuration is:
+
+auto vmbr0
+iface vmbr0 inet static
+        address 192.168.10.181/24
+        gateway 192.168.10.1
+        bridge-ports eno1
+        bridge-stp off
+        bridge-fd 0
+
+
+DO NOT move the Proxmox management IP to vmbr1.
+
+
+====================================================================
+                    PART 4 - CREATE vmbr1
+====================================================================
+
+vmbr1 is the PUBLIC bridge.
+
+It connects:
+
+enp2s0 -> vmbr1 -> Issabel
+
+
+Edit:
+
+/etc/network/interfaces
+
+
+Command:
+
+vi /etc/network/interfaces
+
+
+The complete configuration should look similar to:
+
+auto lo
+iface lo inet loopback
+
+iface eno1 inet manual
+
+auto vmbr0
+iface vmbr0 inet static
+        address 192.168.10.181/24
+        gateway 192.168.10.1
+        bridge-ports eno1
+        bridge-stp off
+        bridge-fd 0
+
+iface enp2s0 inet manual
+
+auto vmbr1
+iface vmbr1 inet manual
+        bridge-ports enp2s0
+        bridge-stp off
+        bridge-fd 0
+
+source /etc/network/interfaces.d/*
+
+
+IMPORTANT:
+
+vmbr1 does NOT have a Proxmox IP address.
+
+The public IP belongs to the Issabel VM, not the Proxmox host.
+
+
+====================================================================
+                    PART 5 - APPLY vmbr1
+====================================================================
+
+RUN ON PROXMOX HOST.
+
+
+Apply configuration:
+
+ifreload -a
+
+
+Check:
+
+ip -br link
+
+
+Expected:
+
+enp2s0    UP
+eno1       UP
+vmbr0      UP
+vmbr1      UP
+
+
+Check bridges:
+
+bridge link
+
+
+Expected:
+
+enp2s0 ... master vmbr1 state forwarding
+
+eno1 ... master vmbr0 state forwarding
+
+
+If enp2s0 is not attached to vmbr1, stop and fix the bridge
+configuration before continuing.
+
+
+====================================================================
+                  PART 6 - ISSABEL VM CONFIGURATION
+====================================================================
+
+Issabel VM:
+
+VM ID:
+200
+
+Check:
+
+qm status 200
+
+
+Expected:
+
+status: running
+
+
+Check VM network:
+
+qm config 200
+
+
+The network line should be:
+
+net0: virtio=BC:24:11:3F:23:CC,bridge=vmbr1,firewall=1
+
+
+IMPORTANT:
+
+Issabel must use:
+
+bridge=vmbr1
+
+
+NOT:
+
+bridge=vmbr0
+
+
+The public path is:
+
+enp2s0
+   |
+vmbr1
+   |
+VM 200
+   |
+eth0
+
+
+====================================================================
+                 PART 7 - TROUBLESHOOTING NO CARRIER
+====================================================================
+
+If Issabel eth0 shows:
+
+DOWN
+
+or:
+
+NO-CARRIER
+
+or:
+
+Link detected: no
+
+
+FIRST check Proxmox.
+
+RUN ON PROXMOX:
+
+ip -br link
+
+
+Then:
+
+ethtool enp2s0 | grep -E "Speed|Duplex|Link detected"
+
+
+Expected:
+
+Link detected: yes
+
+
+Then:
+
+bridge link | grep enp2s0
+
+
+Expected:
+
+enp2s0 ... master vmbr1
+
+
+Then:
+
+qm config 200
+
+
+Make sure:
+
+bridge=vmbr1
+
+
+Then:
+
+qm status 200
+
+
+If necessary, restart the VM:
+
+qm stop 200
+
+qm start 200
+
+
+After booting Issabel, check INSIDE ISSABEL:
+
+ethtool eth0 | grep "Link detected"
+
+
+Expected:
+
+Link detected: yes
+
+
+====================================================================
+              PART 8 - TROUBLESHOOT VM TAP INTERFACE
+====================================================================
+
+Proxmox creates a TAP interface for the VM.
+
+For VM 200 it was:
+
+tap200i0
+
+
+Check:
+
+ip link show tap200i0
+
+
+Expected something similar to:
+
+tap200i0: <BROADCAST,MULTICAST,PROMISC,UP,LOWER_UP>
+
+
+Check:
+
+bridge link
+
+
+The VM's virtual interface should be connected through the
+appropriate Proxmox bridge/firewall path.
+
+
+Check the VM's QEMU network:
+
+qm monitor 200
+
+
+Then:
+
+info network
+
+
+Expected to see:
+
+net0
+model=virtio-net-pci
+macaddr=bc:24:11:3f:23:cc
+
+
+Exit monitor:
+
+quit
+
+
+IMPORTANT:
+
+Do not permanently rely on manually attaching tap200i0.
+
+The correct permanent configuration is the VM network device
+using:
+
+bridge=vmbr1
+
+
+====================================================================
+                  PART 9 - ORIGINAL ISSABEL NETWORK
+====================================================================
+
+Originally Issabel was using:
+
+IP:
+192.168.10.187
+
+Gateway:
+192.168.10.1
+
+
+Original route:
+
+default via 192.168.10.1 dev eth0
+
+192.168.10.0/24 dev eth0 src 192.168.10.187
+
+
+This was removed because Issabel is intended to use the public
+network directly.
+
+
+====================================================================
+               PART 10 - ISSABEL PUBLIC IP CONFIGURATION
+====================================================================
+
+RUN INSIDE ISSABEL 4.
+
+
+First make a backup:
+
+cp /etc/sysconfig/network-scripts/ifcfg-eth0 \
+/root/ifcfg-eth0.backup
+
+
+Check the backup exists:
+
+ls -l /root/ifcfg-eth0.backup
+
+
+Edit:
+
+vi /etc/sysconfig/network-scripts/ifcfg-eth0
+
+
+In vi:
+
+Press:
+
+Esc
+
+Then:
+
+:%d
+
+Press Enter.
+
+
+Press:
+
+i
+
+
+Enter:
+
+DEVICE=eth0
+TYPE=Ethernet
+ONBOOT=yes
+BOOTPROTO=none
+IPADDR=61.245.30.75
+NETMASK=255.255.255.248
+GATEWAY=61.245.30.73
+DNS1=8.8.8.8
+DNS2=1.1.1.1
+
+
+Save:
+
+Press Esc
+
+Type:
+
+:wq
+
+Press Enter.
+
+
+====================================================================
+                    PART 11 - RESTART NETWORK
+====================================================================
+
+RUN INSIDE ISSABEL.
+
+
+systemctl restart network
+
+
+Wait several seconds.
+
+Check:
+
+ip -br addr
+
+
+Expected:
+
+eth0    UP    61.245.30.75/29
+
+
+Check route:
+
+ip route
+
+
+Expected:
+
+default via 61.245.30.73 dev eth0
+
+
+There should NOT be:
+
+192.168.10.187
+
+
+as Issabel's main IP anymore.
+
+
+====================================================================
+                    PART 12 - TEST NETWORK
+====================================================================
+
+RUN INSIDE ISSABEL.
+
+
+TEST 1 - Interface:
+
+ip -br addr
+
+
+Expected:
+
+eth0 UP 61.245.30.75/29
+
+
+TEST 2 - Gateway:
+
+ping -c 4 61.245.30.73
+
+
+Expected:
+
+4 packets transmitted
+4 received
+
+
+TEST 3 - Internet by IP:
+
+ping -c 4 8.8.8.8
+
+
+Expected successful replies.
+
+
+TEST 4 - DNS:
+
+ping -c 4 google.com
+
+
+Expected successful replies.
+
+
+If:
+
+gateway ping works
+Internet IP ping works
+DNS ping works
+
+
+then the public network is functioning correctly.
+
+
+====================================================================
+                  PART 13 - WEB MANAGEMENT
+====================================================================
+
+From a PC that can reach the public IP:
+
+https://61.245.30.75
+
+
+If necessary:
+
+http://61.245.30.75
+
+
+If HTTPS shows a certificate warning, the Issabel server may be
+using a self-signed certificate.
+
+
+If the web page does not open, RUN INSIDE ISSABEL:
+
+systemctl status httpd
+
+
+Then:
+
+netstat -tulpn | grep -E ':80|:443'
+
+
+Then:
+
+curl -I http://127.0.0.1
+
+
+These commands determine whether Apache is running and listening.
+
+
+====================================================================
+                  PART 14 - VOIP CONFIGURATION
+====================================================================
+
+Issabel is being used as a VOIP/PBX server.
+
+The network portion is:
+
+Public switch
+     |
+enp2s0
+     |
+vmbr1
+     |
+Issabel
+     |
+eth0
+     |
+61.245.30.75
+
+
+The next configuration areas are:
+
+1. SIP
+2. RTP
+3. NAT
+4. External IP
+5. SIP trunk
+6. Inbound routes
+7. Outbound routes
+8. Firewall
+9. Security
+
+
+====================================================================
+                     PART 15 - SIP
+====================================================================
+
+A common SIP port is:
+
+UDP 5060
+
+
+BUT:
+
+Do not assume your SIP provider uses UDP 5060.
+
+Check the SIP provider's requirements.
+
+
+If using PJSIP, verify the PJSIP transport/port.
+
+If using chan_sip, verify the chan_sip port.
+
+
+Do not configure both services to listen on the same port.
+
+
+====================================================================
+                     PART 16 - RTP
+====================================================================
+
+RTP carries the actual voice/audio.
+
+A common Asterisk RTP range is:
+
+UDP 10000-20000
+
+
+BUT:
+
+Check the actual Issabel/Asterisk RTP configuration.
+
+Do not open a random RTP range without checking Asterisk.
+
+
+Typical problems caused by incorrect RTP/NAT configuration:
+
+- Call connects but no audio
+- One-way audio
+- Audio works in one direction only
+- Call disconnects after a few seconds
+
+
+====================================================================
+                  PART 17 - PUBLIC/NAT SETTINGS
+====================================================================
+
+Because Issabel has a public IP directly on eth0:
+
+61.245.30.75
+
+
+it is NOT behind the private:
+
+192.168.10.0/24
+
+
+network.
+
+Asterisk/Issabel needs to know its external/public address where
+the SIP configuration requires it.
+
+
+Public address:
+
+61.245.30.75
+
+
+Gateway:
+
+61.245.30.73
+
+
+Do not configure the old:
+
+192.168.10.187
+
+
+as the Issabel external address.
+
+
+====================================================================
+                    PART 18 - FIREWALL
+====================================================================
+
+IMPORTANT.
+
+Issabel is now directly exposed to the Internet.
+
+
+DO NOT:
+
+- Disable the firewall permanently
+- Open all ports
+- Expose SSH to the entire Internet
+- Expose the Issabel web interface to everyone
+- Allow unrestricted SIP scanning
+- Use weak passwords
+
+
+Recommended approach:
+
+SIP:
+Allow only the SIP provider IP addresses when possible.
+
+
+RTP:
+Allow the required RTP traffic from the provider/media network.
+
+
+SSH:
+Allow only your management IP or VPN.
+
+
+Web management:
+Allow only your management IP or VPN.
+
+
+====================================================================
+                  PART 19 - WEB MANAGEMENT SECURITY
+====================================================================
+
+The PBX needs public network access for VoIP.
+
+The PBX does NOT necessarily need public web management access.
+
+
+Ideally:
+
+VOIP traffic:
+Internet -> Issabel
+
+
+Management:
+Your LAN/VPN -> Issabel
+
+
+This is much safer than:
+
+Internet -> Issabel web management
+
+
+If you have a VPN, use the VPN for PBX administration.
+
+
+====================================================================
+              PART 20 - DO NOT CHANGE PROXMOX MANAGEMENT
+====================================================================
+
+The Proxmox management network remains:
+
+eno1
+ |
+vmbr0
+ |
+192.168.10.181/24
+ |
+192.168.10.1
+
+
+Do NOT move:
+
+192.168.10.181
+
+
+to vmbr1.
+
+
+vmbr1 is dedicated to:
+
+enp2s0
+ |
+public network
+ |
+Issabel
+
+
+====================================================================
+                    PART 21 - FINAL CHECK
+====================================================================
+
+RUN ON PROXMOX HOST:
+
+
+ip -br link
+
+
+Expected:
+
+eno1       UP
+enp2s0     UP
+vmbr0      UP
+vmbr1      UP
+
+
+Then:
+
+ethtool enp2s0 | grep -E "Speed|Duplex|Link detected"
+
+
+Expected:
+
+Speed: 1000Mb/s
+Duplex: Full
+Link detected: yes
+
+
+Then:
+
+bridge link
+
+
+Expected:
+
+eno1  ... master vmbr0
+enp2s0 ... master vmbr1
+
+
+Then:
+
+qm config 200
+
+
+Expected:
+
+net0: virtio=BC:24:11:3F:23:CC,bridge=vmbr1,firewall=1
+
+
+====================================================================
+                   PART 22 - FINAL ISSABEL CHECK
+====================================================================
+
+RUN INSIDE ISSABEL:
+
+
+ip -br addr
+
+
+Expected:
+
+eth0    UP    61.245.30.75/29
+
+
+Then:
+
+ip route
+
+
+Expected:
+
+default via 61.245.30.73 dev eth0
+
+
+Then:
+
+ethtool eth0 | grep "Link detected"
+
+
+Expected:
+
+Link detected: yes
+
+
+Then:
+
+ping -c 4 61.245.30.73
+
+
+Then:
+
+ping -c 4 8.8.8.8
+
+
+Then:
+
+ping -c 4 google.com
+
+
+All should work.
+
+
+====================================================================
+                         FINAL DESIGN
+====================================================================
+
+
+PRIVATE/LAN:
+
+eno1
+  |
+  v
+vmbr0
+  |
+  +---- 192.168.10.181 Proxmox
+  |
+  +---- 192.168.10.182 Zabbix/Grafana
+
+
+PUBLIC/VOIP:
+
+Public Switch
+  |
+  v
+enp2s0
+  |
+  v
+vmbr1
+  |
+  v
+Issabel VM 200
+  |
+  v
+eth0
+  |
+  v
+61.245.30.75/29
+  |
+  v
+61.245.30.73 gateway
+
+
+====================================================================
+                         TROUBLESHOOTING
+====================================================================
+
+PROBLEM:
+enp2s0 shows DOWN
+
+
+RUN:
+
+ip link set enp2s0 up
+
+ethtool enp2s0 | grep "Link detected"
+
+
+If "no":
+
+Check cable/switch/NIC.
+
+
+--------------------------------------------------------------------
+
+PROBLEM:
+enp2s0 is UP but vmbr1 is DOWN
+
+
+RUN:
+
+cat /etc/network/interfaces
+
+Check:
+
+auto vmbr1
+iface vmbr1 inet manual
+        bridge-ports enp2s0
+        bridge-stp off
+        bridge-fd 0
+
+
+Then:
+
+ifreload -a
+
+Then:
+
+ip -br link
+
+Then:
+
+bridge link
+
+
+--------------------------------------------------------------------
+
+PROBLEM:
+Issabel eth0 says Link detected: no
+
+
+RUN ON PROXMOX:
+
+ethtool enp2s0 | grep "Link detected"
+
+Must say:
+
+yes
+
+
+Then:
+
+bridge link | grep enp2s0
+
+
+Must show:
+
+master vmbr1
+
+
+Then:
+
+qm config 200
+
+
+Must show:
+
+bridge=vmbr1
+
+
+Then restart VM if necessary.
+
+
+--------------------------------------------------------------------
+
+PROBLEM:
+Issabel has link but no Internet
+
+
+INSIDE ISSABEL:
+
+ip -br addr
+
+ip route
+
+
+Verify:
+
+61.245.30.75/29
+
+default via 61.245.30.73
+
+
+Test:
+
+ping -c 4 61.245.30.73
+
+ping -c 4 8.8.8.8
+
+ping -c 4 google.com
+
+
+--------------------------------------------------------------------
+
+PROBLEM:
+Internet works but web management doesn't open
+
+
+INSIDE ISSABEL:
+
+systemctl status httpd
+
+netstat -tulpn | grep -E ':80|:443'
+
+curl -I http://127.0.0.1
+
+
+If Apache is not running:
+
+systemctl start httpd
+
+
+Then:
+
+systemctl enable httpd
+
+
+--------------------------------------------------------------------
+
+PROBLEM:
+SIP registration works but no audio
+
+
+Check:
+
+1. Public IP
+2. Asterisk external IP
+3. RTP range
+4. Firewall
+5. SIP provider IPs
+6. SIP transport
+7. NAT settings
+
+
+Do NOT randomly open ports.
+
+
+--------------------------------------------------------------------
+
+PROBLEM:
+Inbound call works but outbound doesn't
+
+
+Check:
+
+1. SIP trunk
+2. Outbound route
+3. Dial pattern
+4. Provider authentication
+5. Caller ID requirements
+6. SIP provider restrictions
+7. Firewall
+
+
+--------------------------------------------------------------------
+
+PROBLEM:
+Outbound call works but inbound doesn't
+
+
+Check:
+
+1. SIP trunk registration
+2. Provider inbound routing
+3. DID configuration
+4. Inbound route
+5. SIP signaling
+6. Firewall
+
+
+====================================================================
+                    BACKUP / RECOVERY
+====================================================================
+
+Issabel network backup:
+
+/root/ifcfg-eth0.backup
+
+
+Restore if necessary:
+
+cp /root/ifcfg-eth0.backup \
+/etc/sysconfig/network-scripts/ifcfg-eth0
+
+
+Then:
+
+systemctl restart network
+
+
+====================================================================
+                     IMPORTANT COMMANDS
+====================================================================
+
+PROXMOX:
+
+ip -br link
+
+ethtool enp2s0
+
+ethtool enp2s0 | grep -E "Speed|Duplex|Link detected"
+
+lspci -nnk | grep -A4 -i ethernet
+
+ethtool -i enp2s0
+
+cat /etc/network/interfaces
+
+ifreload -a
+
+bridge link
+
+bridge fdb show br vmbr1
+
+qm status 200
+
+qm config 200
+
+qm monitor 200
+
+info network
+
+quit
+
+
+ISABEL:
+
+ip -br addr
+
+ip route
+
+ip link show eth0
+
+ethtool eth0
+
+ethtool eth0 | grep "Link detected"
+
+cat /etc/sysconfig/network-scripts/ifcfg-eth0
+
+systemctl restart network
+
+systemctl status network
+
+systemctl status httpd
+
+netstat -tulpn | grep -E ':80|:443'
+
+curl -I http://127.0.0.1
+
+ping -c 4 61.245.30.73
+
+ping -c 4 8.8.8.8
+
+ping -c 4 google.com
+
+
+====================================================================
+                         FINAL STATUS
+====================================================================
+
+PROXMOX PRIVATE NETWORK:
+
+eno1
+  |
+vmbr0
+  |
+192.168.10.181
+  |
+Gateway 192.168.10.1
+
+
+ZABBIX/GRAFANA:
+
+192.168.10.182
+
+
+PROXMOX PUBLIC PHYSICAL NIC:
+
+enp2s0
+  |
+1000 Mbps
+  |
+Full Duplex
+  |
+Link detected: yes
+
+
+PUBLIC BRIDGE:
+
+vmbr1
+
+
+ISABEL VM:
+
+VM ID:
+200
+
+Virtual NIC:
+virtio
+
+Bridge:
+vmbr1
+
+Interface:
+eth0
+
+
+ISABEL PUBLIC:
+
+IP:
+61.245.30.75
+
+Prefix:
+/29
+
+Netmask:
+255.255.255.248
+
+Gateway:
+61.245.30.73
+
+
+INTERNET:
+CONNECTED
+
+
+====================================================================
+                         END OF RUNBOOK
+====================================================================
+
+NEXT VOIP TASKS:
+
+[ ] Confirm SIP provider
+[ ] Confirm SIP protocol/transport
+[ ] Configure SIP trunk
+[ ] Configure external/public IP
+[ ] Configure NAT settings
+[ ] Verify RTP range
+[ ] Configure firewall
+[ ] Configure inbound route
+[ ] Configure outbound route
+[ ] Test outbound call
+[ ] Test inbound call
+[ ] Test two-way audio
+[ ] Restrict web management
+[ ] Restrict SSH
+[ ] Secure Issabel administrator account
+
+====================================================================
