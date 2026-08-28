@@ -76,8 +76,10 @@ log location) for the underlying error.
 From an external machine (not on the same network):
 
 ```
-curl -I https://61.245.30.75
-curl -I http://61.245.30.75
+curl -I https://Public/Private Ip address xxx.xxx.xxx.xxx
+curl -I http://Public/Private Ip address xxx.xxx.xxx.xxx
+
+/usr/bin/issabel-admin-passwords --change
 ```
 
 ## Related Documents
