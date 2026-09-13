@@ -98,9 +98,9 @@ A more detailed ASCII/text diagram is available in
 |-------------------------------|-----------|-----------------------|-------|
 | Proxmox Host (`noc01`)        | vmbr0     | 192.168.10.181/24     | Management, private LAN |
 | Zabbix/Grafana LXC             | —         | 192.168.10.182        | Monitoring, private LAN |
-| Issabel 4 VM (VM 200)          | eth0      | 61.245.30.75/29       | Public VoIP network |
-| Public gateway                 | —         | 61.245.30.73          | Public network gateway |
-| Public network / broadcast     | —         | 61.245.30.72/29 · broadcast 61.245.30.79 | |
+| Issabel 4 VM (VM 200)          | eth0      | xx.xx.xx.xx/xx       | Public VoIP network |
+| Public gateway                 | —         | xx.xx.xx.xx/xx          | Public network gateway |
+| Public network / broadcast     | —         | xx.xx.xx.xx/xx · broadcast xx.xx.xx.xx | |
 
 Full addressing detail: [`docs/network-design.md`](docs/network-design.md).
 
